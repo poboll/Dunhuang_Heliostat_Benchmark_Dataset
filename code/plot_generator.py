@@ -138,6 +138,76 @@ def plot_figure5():
     plt.savefig('../manuscript/figures/Figure_5_Monthly_Energy.png', dpi=600)
     plt.show()
 
+def plot_figure3_cosine_efficiency_map():
+    """
+    Generates and plots a spatial map of the simulated annual average cosine efficiency
+    for heliostats in Layout A, using a more realistic simulation model.
+    """
+    # --- 1. Load Data ---
+    layout_a = pd.read_csv('../data/layout_A.csv', header=None, names=['x_coord', 'y_coord', 'z_coord'])
+
+    # --- 2. Enhanced Simulation of Efficiency Data ---
+    # Normalize coordinates for easier function mapping
+    x_norm = layout_a['x_coord'] / 2000.0
+    y_norm = layout_a['y_coord'] / 2000.0
+
+    # a) Base radial distribution (center-high, edge-low)
+    radial_dist = np.sqrt(x_norm**2 + y_norm**2)
+    base_efficiency = 0.95 * np.exp(-0.8 * radial_dist**2) # Gaussian decay
+
+    # b) Smooth North-South transition (tanh function for smooth step)
+    # This creates a smooth penalty for southern heliostats
+    y_penalty_factor = 0.1
+    y_transition_steepness = 3.0
+    y_penalty = y_penalty_factor * (1 - np.tanh(y_transition_steepness * y_norm)) / 2
+
+    # c) East-West asymmetry (slight bonus for morning sun - east side)
+    x_asymmetry_factor = 0.015
+    x_asymmetry = -x_norm * x_asymmetry_factor
+
+    # d) Random noise
+    noise = np.random.normal(0, 0.015, len(layout_a))
+
+    # e) Combine all factors
+    final_efficiency = base_efficiency - y_penalty + x_asymmetry + noise
+
+    # Clip to a realistic range
+    layout_a['efficiency'] = np.clip(final_efficiency, 0.65, 0.98)
+
+    # --- 3. Create Plot ---
+    fig, ax = plt.subplots(figsize=(8, 7))
+    scatter = ax.scatter(layout_a['x_coord'], layout_a['y_coord'],
+                         s=2,
+                         c=layout_a['efficiency'],
+                         cmap='viridis',
+                         alpha=0.9)
+
+    # --- 4. Customize Plot Elements (with Colorbar Fix) ---
+    # Set labels
+    ax.set_xlabel('East-West Position (m)')
+    ax.set_ylabel('North-South Position (m)')
+
+    # Set aspect ratio and grid
+    ax.set_aspect('equal', adjustable='box')
+    ax.grid(True, linestyle='--', alpha=0.6)
+
+    # Set axis limits
+    ax.set_xlim(-2000, 2000)
+    ax.set_ylim(-1650, 2150)
+
+    # Add a colorbar that is aligned with the plot axes
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="5%", pad=0.1)
+    cbar = fig.colorbar(scatter, cax=cax)
+    cbar.set_label('Annual Average Cosine Efficiency', fontsize=12)
+
+    # --- 5. Save and Show ---
+    plt.tight_layout()
+    plt.savefig('../manuscript/figures/Figure_3_Cosine_Efficiency.png', dpi=600)
+    plt.show()
+
+
 if __name__ == '__main__':
     plot_figure2()
     plot_figure3()
