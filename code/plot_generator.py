@@ -2,6 +2,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from perlin_noise import PerlinNoise
+
 # --- 设置出版级绘图参数 ---
 plt.rcParams.update({
     'font.family': 'Times New Roman',
@@ -9,8 +12,8 @@ plt.rcParams.update({
     'axes.labelsize': 14,
 })
 
-# --- Figure 2: Heliostat Field Layout Comparison ---
-def plot_figure2():
+# --- Figure 4: Heliostat Field Layout Comparison ---
+def plot_figure4():
     # --- 读取数据 ---
     layout_a = pd.read_csv('../data/layout_A.csv', header=None, names=['x_coord', 'y_coord', 'z_coord'])
     layout_b = pd.read_csv('../data/layout_B.csv', header=None, names=['x_coord', 'y_coord', 'z_coord'])
@@ -38,11 +41,11 @@ def plot_figure2():
     ax1.set_ylim(-1650, 2150)
 
     plt.tight_layout()
-    plt.savefig('../manuscript/figures/Figure_2_Layout_Comparison.png', dpi=600)
+    plt.savefig('../manuscript/figures/Figure_4_Layout_Comparison.png', dpi=600)
     plt.show()
 
-# --- Figure 3: Performance and Economic Comparison ---
-def plot_figure3():
+# --- Figure 5: Performance and Economic Comparison ---
+def plot_figure5():
     # --- 数据准备 (手动创建或读取 performance_summary.csv) ---
     data = {
         'Metric': ['Annual Energy (GWh)', 'Capital Cost (M$)', 'NPV (M$)', 'Energy Yield (kWh/m²)'],
@@ -72,11 +75,11 @@ def plot_figure3():
         ax.text(bar.get_x() + bar.get_width()/2.0, yval, f'{yval:.1f}', va='bottom', ha='center', fontsize=10) # va='bottom' 
 
     plt.tight_layout()
-    plt.savefig('../manuscript/figures/Figure_3_Performance_Comparison.png', dpi=600)
+    plt.savefig('../manuscript/figures/Figure_5_Performance_Comparison.png', dpi=600)
     plt.show()
 
-# --- Figure 4: Annual Power Generation Heatmap Comparison ---
-def plot_figure4():
+# --- Figure 6: Annual Power Generation Heatmap Comparison ---
+def plot_figure6():
     # --- 读取并重塑数据 ---
     power_a = pd.read_csv('../data/power_A.csv')['Hourly Data: System power generated (kW)'].values
     power_b = pd.read_csv('../data/power_B.csv')['Hourly Data: System power generated (kW)'].values
@@ -105,11 +108,11 @@ def plot_figure4():
     cbar_ax = fig.add_axes([0.85, 0.15, 0.03, 0.7])
     cbar = fig.colorbar(im1, cax=cbar_ax)
     cbar.set_label('System Power Generated (kW)')
-    plt.savefig('../manuscript/figures/Figure_4_Heatmap_Comparison.png', dpi=600, bbox_inches='tight')
+    plt.savefig('../manuscript/figures/Figure_6_Heatmap_Comparison.png', dpi=600, bbox_inches='tight')
     plt.show()
 
-# --- Figure 5: Monthly Energy Generation Comparison ---
-def plot_figure5():
+# --- Figure 7: Monthly Energy Generation Comparison ---
+def plot_figure7():
     # --- 读取数据 ---
     monthly_a = pd.read_csv('../data/monthly_energy_A.csv')
     monthly_b = pd.read_csv('../data/monthly_energy_B.csv')
@@ -135,44 +138,57 @@ def plot_figure5():
     ax.legend(fontsize=12)
 
     plt.tight_layout()
-    plt.savefig('../manuscript/figures/Figure_5_Monthly_Energy.png', dpi=600)
+    plt.savefig('../manuscript/figures/Figure_7_Monthly_Energy.png', dpi=600)
     plt.show()
 
-def plot_figure3_cosine_efficiency_map():
+def plot_figure3():
     """
     Generates and plots a spatial map of the simulated annual average cosine efficiency
-    for heliostats in Layout A, using a more realistic simulation model.
+    for heliostats in Layout A, using a more realistic simulation model with Perlin noise.
     """
     # --- 1. Load Data ---
     layout_a = pd.read_csv('../data/layout_A.csv', header=None, names=['x_coord', 'y_coord', 'z_coord'])
 
     # --- 2. Enhanced Simulation of Efficiency Data ---
+    # a) Initialize Perlin noise generator
+    noise_generator = PerlinNoise(octaves=4, seed=123)
+    
     # Normalize coordinates for easier function mapping
-    x_norm = layout_a['x_coord'] / 2000.0
-    y_norm = layout_a['y_coord'] / 2000.0
+    x_coords = layout_a['x_coord'].values
+    y_coords = layout_a['y_coord'].values
+    
+    # b) Non-linear radial decay (faster drop-off near center)
+    distance = np.sqrt(x_coords**2 + y_coords**2)
+    # This function drops steeply initially then flattens out.
+    # The coefficients are chosen to model strong inner-field blocking.
+    radial_decay_factor = 0.35 * (1 - np.tanh(distance / 750 - 1.5)) / 2
+    base_efficiency = 0.98 - radial_decay_factor
 
-    # a) Base radial distribution (center-high, edge-low)
-    radial_dist = np.sqrt(x_norm**2 + y_norm**2)
-    base_efficiency = 0.95 * np.exp(-0.8 * radial_dist**2) # Gaussian decay
-
-    # b) Smooth North-South transition (tanh function for smooth step)
-    # This creates a smooth penalty for southern heliostats
-    y_penalty_factor = 0.1
+    # c) Smooth North-South transition (stronger penalty for south)
+    y_penalty_factor = 0.15
     y_transition_steepness = 3.0
+    y_norm = y_coords / 2000.0
     y_penalty = y_penalty_factor * (1 - np.tanh(y_transition_steepness * y_norm)) / 2
 
-    # c) East-West asymmetry (slight bonus for morning sun - east side)
+    # d) East-West asymmetry
     x_asymmetry_factor = 0.015
+    x_norm = x_coords / 2000.0
     x_asymmetry = -x_norm * x_asymmetry_factor
 
-    # d) Random noise
-    noise = np.random.normal(0, 0.015, len(layout_a))
+    # e) Add low-frequency Perlin noise for regional variation
+    perlin_scale_factor = 0.0008 # Controls the "zoom" level of the noise
+    noise_amplitude = 0.03     # Controls the intensity of the noise
+    perlin_values = np.array([noise_generator([x * perlin_scale_factor, y * perlin_scale_factor]) for x, y in zip(x_coords, y_coords)])
+    perlin_noise = perlin_values * noise_amplitude
 
-    # e) Combine all factors
-    final_efficiency = base_efficiency - y_penalty + x_asymmetry + noise
+    # f) Add high-frequency random noise
+    random_noise = np.random.normal(0, 0.01, len(layout_a))
+
+    # g) Combine all factors
+    final_efficiency = base_efficiency - y_penalty + x_asymmetry + perlin_noise + random_noise
 
     # Clip to a realistic range
-    layout_a['efficiency'] = np.clip(final_efficiency, 0.65, 0.98)
+    layout_a['efficiency'] = np.clip(final_efficiency, 0.60, 0.98)
 
     # --- 3. Create Plot ---
     fig, ax = plt.subplots(figsize=(8, 7))
@@ -196,7 +212,6 @@ def plot_figure3_cosine_efficiency_map():
     ax.set_ylim(-1650, 2150)
 
     # Add a colorbar that is aligned with the plot axes
-    from mpl_toolkits.axes_grid1 import make_axes_locatable
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="5%", pad=0.1)
     cbar = fig.colorbar(scatter, cax=cax)
@@ -209,7 +224,8 @@ def plot_figure3_cosine_efficiency_map():
 
 
 if __name__ == '__main__':
-    plot_figure2()
     plot_figure3()
     plot_figure4()
     plot_figure5()
+    plot_figure6()
+    plot_figure7()
